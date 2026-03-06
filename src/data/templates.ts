@@ -1,0 +1,158 @@
+import type { TopologyTemplate } from '../types'
+import { buildNodeData } from './catalog'
+
+export const topologyTemplates: TopologyTemplate[] = [
+  {
+    id: 'monolith',
+    name: '单体应用',
+    description: 'CDN + LB + Web + DB 的基础单体架构。',
+    fixedQps: 1600,
+    sourceNodeId: 'cdn-1',
+    nodes: [
+      { id: 'cdn-1', type: 'default', position: { x: 80, y: 160 }, data: buildNodeData('cdn') },
+      {
+        id: 'lb-1',
+        type: 'default',
+        position: { x: 280, y: 160 },
+        data: buildNodeData('load-balancer'),
+      },
+      {
+        id: 'web-1',
+        type: 'default',
+        position: { x: 500, y: 160 },
+        data: { ...buildNodeData('web'), capacity: 2200, label: 'Monolith App' },
+      },
+      {
+        id: 'db-1',
+        type: 'default',
+        position: { x: 720, y: 160 },
+        data: { ...buildNodeData('database'), capacity: 1900 },
+      },
+    ],
+    edges: [
+      { id: 'e-cdn-lb', source: 'cdn-1', target: 'lb-1' },
+      { id: 'e-lb-web', source: 'lb-1', target: 'web-1' },
+      { id: 'e-web-db', source: 'web-1', target: 'db-1' },
+    ],
+  },
+  {
+    id: 'three-tier',
+    name: '三层架构',
+    description: '网关、应用层和数据层分离，包含缓存。',
+    fixedQps: 3200,
+    sourceNodeId: 'cdn-1',
+    nodes: [
+      { id: 'cdn-1', type: 'default', position: { x: 60, y: 180 }, data: buildNodeData('cdn') },
+      {
+        id: 'gw-1',
+        type: 'default',
+        position: { x: 260, y: 180 },
+        data: buildNodeData('api-gateway'),
+      },
+      {
+        id: 'web-1',
+        type: 'default',
+        position: { x: 460, y: 80 },
+        data: { ...buildNodeData('web'), zone: 'az-a' },
+      },
+      {
+        id: 'web-2',
+        type: 'default',
+        position: { x: 460, y: 280 },
+        data: { ...buildNodeData('web'), zone: 'az-b' },
+      },
+      {
+        id: 'redis-1',
+        type: 'default',
+        position: { x: 690, y: 90 },
+        data: { ...buildNodeData('redis'), capacity: 6400 },
+      },
+      {
+        id: 'db-1',
+        type: 'default',
+        position: { x: 700, y: 270 },
+        data: { ...buildNodeData('database'), capacity: 2400 },
+      },
+    ],
+    edges: [
+      { id: 'e-cdn-gw', source: 'cdn-1', target: 'gw-1' },
+      { id: 'e-gw-web1', source: 'gw-1', target: 'web-1' },
+      { id: 'e-gw-web2', source: 'gw-1', target: 'web-2' },
+      { id: 'e-web1-redis', source: 'web-1', target: 'redis-1' },
+      { id: 'e-web2-redis', source: 'web-2', target: 'redis-1' },
+      { id: 'e-web1-db', source: 'web-1', target: 'db-1' },
+      { id: 'e-web2-db', source: 'web-2', target: 'db-1' },
+    ],
+  },
+  {
+    id: 'microservices-multi-az',
+    name: '微服务多可用区',
+    description: 'API 网关 + 服务拆分 + MQ + ES 的多可用区拓扑。',
+    fixedQps: 6200,
+    sourceNodeId: 'cdn-1',
+    nodes: [
+      { id: 'cdn-1', type: 'default', position: { x: 40, y: 150 }, data: buildNodeData('cdn') },
+      {
+        id: 'gw-1',
+        type: 'default',
+        position: { x: 230, y: 150 },
+        data: { ...buildNodeData('api-gateway'), capacity: 7000 },
+      },
+      {
+        id: 'svc-order',
+        type: 'default',
+        position: { x: 430, y: 40 },
+        data: { ...buildNodeData('service'), label: 'Order Service', zone: 'az-a' },
+      },
+      {
+        id: 'svc-user',
+        type: 'default',
+        position: { x: 430, y: 150 },
+        data: { ...buildNodeData('service'), label: 'User Service', zone: 'az-b' },
+      },
+      {
+        id: 'svc-search',
+        type: 'default',
+        position: { x: 430, y: 260 },
+        data: { ...buildNodeData('service'), label: 'Search Service', zone: 'az-c' },
+      },
+      {
+        id: 'redis-1',
+        type: 'default',
+        position: { x: 670, y: 30 },
+        data: { ...buildNodeData('redis'), capacity: 11000 },
+      },
+      {
+        id: 'mq-1',
+        type: 'default',
+        position: { x: 670, y: 150 },
+        data: { ...buildNodeData('mq'), capacity: 15000 },
+      },
+      {
+        id: 'db-1',
+        type: 'default',
+        position: { x: 670, y: 270 },
+        data: { ...buildNodeData('database'), capacity: 3000 },
+      },
+      {
+        id: 'es-1',
+        type: 'default',
+        position: { x: 900, y: 150 },
+        data: { ...buildNodeData('search'), capacity: 3800 },
+      },
+    ],
+    edges: [
+      { id: 'e-cdn-gw', source: 'cdn-1', target: 'gw-1' },
+      { id: 'e-gw-order', source: 'gw-1', target: 'svc-order' },
+      { id: 'e-gw-user', source: 'gw-1', target: 'svc-user' },
+      { id: 'e-gw-search', source: 'gw-1', target: 'svc-search' },
+      { id: 'e-order-redis', source: 'svc-order', target: 'redis-1' },
+      { id: 'e-order-mq', source: 'svc-order', target: 'mq-1' },
+      { id: 'e-order-db', source: 'svc-order', target: 'db-1' },
+      { id: 'e-user-redis', source: 'svc-user', target: 'redis-1' },
+      { id: 'e-user-db', source: 'svc-user', target: 'db-1' },
+      { id: 'e-search-es', source: 'svc-search', target: 'es-1' },
+      { id: 'e-search-mq', source: 'svc-search', target: 'mq-1' },
+    ],
+  },
+]
