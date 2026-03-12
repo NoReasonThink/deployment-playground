@@ -98,6 +98,12 @@
   gap: 6px;
 }
 
+.term-tab-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .right-tabs button {
   border: 1px solid #cbd5e1;
   border-radius: 8px;
@@ -776,4 +782,62 @@
   padding: 10px 16px;
   color: #475569;
   font-size: 0.85rem;
+}
+
+.term-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.term-help {
+  position: relative;
+  display: inline-flex;
+}
+
+.term-help summary {
+  list-style: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  border: 1px solid #94a3b8;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #475569;
+  background: #ffffff;
+}
+
+.term-help summary::-webkit-details-marker {
+  display: none;
+}
+
+.term-help-card {
+  width: 250px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.16);
+  padding: 8px 10px;
+  display: grid;
+  gap: 6px;
+}
+
+.term-help-card strong {
+  font-size: 0.8rem;
+  color: #1e293b;
+}
+
+.term-help-card p {
+  margin: 0;
+  font-size: 0.78rem;
+  color: #334155;
+}
+
+.palette-item-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }

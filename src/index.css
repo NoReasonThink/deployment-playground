@@ -1,4 +1,12 @@
 :root {
+  --bg: 248 250 252;
+  --fg: 15 23 42;
+  --card: 255 255 255;
+  --border: 219 234 254;
+  --primary: 37 99 235;
+  --primary-foreground: 255 255 255;
+  --muted: 241 245 249;
+  --muted-foreground: 71 85 105;
   font-family:
     Inter,
     system-ui,
@@ -20,4 +28,6 @@
 body {
   margin: 0;
   min-width: 320px;
+  background: rgb(var(--bg));
+  color: rgb(var(--fg));
 }

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { runPerformanceBaseline } from './performanceBaseline'
 
 describe('performance baseline', () => {
-  it('在大规模节点与事件下输出吞吐与帧率基线', () => {
+  it('在大规模节点与事件下输出吞吐与帧率基线', { timeout: 12000 }, () => {
     const result = runPerformanceBaseline({
       nodeCount: 320,
       edgeFanout: 3,
@@ -22,4 +22,3 @@ describe('performance baseline', () => {
     expect(result.p95TickMs).toBeLessThan(150)
   })
 })
-

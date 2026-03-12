@@ -12,7 +12,10 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import './App.css'
+import { TermHelp } from './components/TermHelp'
+import { nodeParameterBounds } from './config/guardrails'
 import { eventTemplates } from './data/events'
+import { type GlossaryTermKey } from './data/glossary'
 import { buildNodeData, paletteItems } from './data/catalog'
 import { scenarios } from './data/scenarios'
 import { topologyTemplates } from './data/templates'
@@ -30,6 +33,8 @@ import { createEventInstance, reduceActiveEvents } from './engine/events'
 import { applyHeatmapStyle, type HeatmapMetric } from './engine/heatmap'
 import { executeOrchestrationTick, type RuntimeOrchestrationPlan } from './engine/orchestration'
 import { generatePostmortemReport } from './engine/postmortem'
+import { readDraftState, saveDraftState } from './engine/draft'
+import { createSeededRandom, hashSeed } from './engine/random'
 import {
   evaluateScenario,
   isScenarioUnlocked,
@@ -51,6 +56,7 @@ import { simulateTick } from './engine/simulate'
 import { readUserTemplates, removeUserTemplate, saveUserTemplate } from './engine/templateMarket'
 import { buildTraceSegments } from './engine/trace'
 import { computeQps } from './engine/traffic'
+import { usePlaygroundStore } from './store/usePlaygroundStore'
 import type {
   ActiveEvent,
   ArchitectureSnapshot,
@@ -65,7 +71,50 @@ import type {
   TrafficPattern,
 } from './types'
 
+function clampNumber(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value))
+}
+
+const componentTermKeyByKind: Record<NodeKind, GlossaryTermKey> = {
+  cdn: 'component.cdn',
+  'load-balancer': 'component.load-balancer',
+  'api-gateway': 'component.api-gateway',
+  waf: 'component.waf',
+  'rate-limiter': 'component.rate-limiter',
+  'circuit-breaker': 'component.circuit-breaker',
+  'service-mesh': 'component.service-mesh',
+  observability: 'component.observability',
+  tracing: 'component.tracing',
+  iam: 'component.iam',
+  'object-storage': 'component.object-storage',
+  web: 'component.web',
+  service: 'component.service',
+  redis: 'component.redis',
+  mq: 'component.mq',
+  database: 'component.database',
+  search: 'component.search',
+}
+
+const eventTermKeyById: Partial<Record<string, GlossaryTermKey>> = {
+  'traffic-spike': 'event.traffic-spike',
+  'hot-key': 'event.hot-key',
+  'cdn-origin-fail': 'event.cdn-origin-fail',
+  'redis-eviction-storm': 'event.redis-eviction-storm',
+  'deploy-regression': 'event.deploy-regression',
+  'cert-expired': 'event.cert-expired',
+  'manual-scale-delay': 'event.manual-scale-delay',
+  'region-a-partition': 'event.region-a-partition',
+  'canary-regression': 'event.canary-regression',
+  'kms-rotation-failure': 'event.kms-rotation-failure',
+}
+
 function App() {
+  const termLabel = (text: string, key: GlossaryTermKey) => (
+    <span className="term-label">
+      {text}
+      <TermHelp termKey={key} />
+    </span>
+  )
   const [scenarioId, setScenarioId] = useState<ScenarioDefinition['id']>(scenarios[0].id)
   const selectedScenario = useMemo(
     () => scenarios.find((scenario) => scenario.id === scenarioId) ?? scenarios[0],
@@ -87,6 +136,8 @@ function App() {
   const [scheduler, setScheduler] = useState<SchedulerState>(resetScheduler(1))
   const [activeEvents, setActiveEvents] = useState<ActiveEvent[]>([])
   const [eventLogs, setEventLogs] = useState<string[]>([])
+  const [faultSeed, setFaultSeed] = useState('20260309')
+  const [seedCycle, setSeedCycle] = useState(0)
   const [batchCapacity, setBatchCapacity] = useState('')
   const [batchLatency, setBatchLatency] = useState('')
   const [heatMetric, setHeatMetric] = useState<HeatmapMetric>('cpu')
@@ -113,6 +164,10 @@ function App() {
     availability: 100,
   })
   const [bottlenecks, setBottlenecks] = useState<string[]>([])
+  const setCanvasLayer = usePlaygroundStore((state) => state.setCanvasLayer)
+  const setSimulationLayer = usePlaygroundStore((state) => state.setSimulationLayer)
+  const setMonitorLayer = usePlaygroundStore((state) => state.setMonitorLayer)
+  const setScenarioLayer = usePlaygroundStore((state) => state.setScenarioLayer)
   const idRef = useRef(1000)
   const nodesRef = useRef<PlaygroundNode[]>(nodes)
   const edgesRef = useRef<Edge[]>(edges)
@@ -122,6 +177,7 @@ function App() {
   const skipScenarioResetRef = useRef(false)
   const snapshotImportInputRef = useRef<HTMLInputElement>(null)
   const replayCursorRef = useRef(0)
+  const rngRef = useRef(createSeededRandom(hashSeed('20260309:0')))
   const selectedNodes = useMemo(() => nodes.filter((node) => node.selected), [nodes])
   const primarySelectedNode = selectedNodes[0]
   const heatmapNodes = useMemo(() => applyHeatmapStyle(nodes, heatMetric), [nodes, heatMetric])
@@ -227,6 +283,27 @@ function App() {
   }, [])
 
   useEffect(() => {
+    rngRef.current = createSeededRandom(hashSeed(`${faultSeed}:${seedCycle}`))
+  }, [faultSeed, seedCycle])
+
+  useEffect(() => {
+    const draft = readDraftState()
+    if (!draft) {
+      return
+    }
+    const matchedScenario = scenarios.find((item) => item.id === draft.scenarioId)
+    if (!matchedScenario) {
+      return
+    }
+    skipScenarioResetRef.current = true
+    setScenarioId(draft.scenarioId)
+    setNodes(draft.nodes.map((node) => ({ ...node, data: { ...node.data }, position: { ...node.position } })))
+    setEdges(draft.edges.map((edge) => ({ ...edge })))
+    setFixedQps(draft.fixedQps)
+    setConnectHint('已恢复最近一次草稿。')
+  }, [setEdges, setNodes])
+
+  useEffect(() => {
     setSnapshots(readSnapshots())
   }, [])
 
@@ -268,6 +345,45 @@ function App() {
       setScenarioId(fallback.id)
     }
   }, [scenarioId, unlockedScenarioIds])
+
+  useEffect(() => {
+    saveDraftState({
+      savedAt: Date.now(),
+      scenarioId,
+      fixedQps,
+      nodes: nodes.map((node) => ({ ...node, data: { ...node.data }, position: { ...node.position } })),
+      edges: edges.map((edge) => ({ ...edge })),
+    })
+  }, [edges, fixedQps, nodes, scenarioId])
+
+  useEffect(() => {
+    setCanvasLayer({
+      nodes,
+      edges,
+      selectedScenarioId: scenarioId,
+    })
+  }, [edges, nodes, scenarioId, setCanvasLayer])
+
+  useEffect(() => {
+    setSimulationLayer({
+      scheduler,
+      metrics,
+      activeEvents,
+    })
+  }, [activeEvents, metrics, scheduler, setSimulationLayer])
+
+  useEffect(() => {
+    setMonitorLayer({
+      bottlenecks,
+      eventLogs,
+    })
+  }, [bottlenecks, eventLogs, setMonitorLayer])
+
+  useEffect(() => {
+    setScenarioLayer({
+      unlockedScenarioIds: [...unlockedScenarioIds],
+    })
+  }, [setScenarioLayer, unlockedScenarioIds])
 
   useEffect(() => {
     if (skipScenarioResetRef.current) {
@@ -327,7 +443,12 @@ function App() {
       const nextSchedule = nextSchedulerTick(schedulerRef.current)
       schedulerRef.current = nextSchedule
       setScheduler(nextSchedule)
-      const orchestrated = executeOrchestrationTick(orchestrationPlansRef.current, nextSchedule.tick, eventTemplates)
+      const orchestrated = executeOrchestrationTick(
+        orchestrationPlansRef.current,
+        nextSchedule.tick,
+        eventTemplates,
+        () => rngRef.current(),
+      )
       orchestrationPlansRef.current = orchestrated.nextPlans
       setOrchestrationPlans(orchestrated.nextPlans)
       const runtimeEvents = [...orchestrated.generated, ...activeEventsRef.current]
@@ -422,7 +543,12 @@ function App() {
     }
     schedulerRef.current = nextSchedule
     setScheduler(nextSchedule)
-    const orchestrated = executeOrchestrationTick(orchestrationPlansRef.current, nextSchedule.tick, eventTemplates)
+    const orchestrated = executeOrchestrationTick(
+      orchestrationPlansRef.current,
+      nextSchedule.tick,
+      eventTemplates,
+      () => rngRef.current(),
+    )
     orchestrationPlansRef.current = orchestrated.nextPlans
     setOrchestrationPlans(orchestrated.nextPlans)
     const runtimeEvents = [...orchestrated.generated, ...activeEvents]
@@ -485,8 +611,12 @@ function App() {
           ...node,
           data: {
             ...node.data,
-            capacity: Number.isFinite(nextCapacity) ? Math.max(1, nextCapacity!) : node.data.capacity,
-            baseLatencyMs: Number.isFinite(nextLatency) ? Math.max(1, nextLatency!) : node.data.baseLatencyMs,
+            capacity: Number.isFinite(nextCapacity)
+              ? clampNumber(nextCapacity!, nodeParameterBounds.capacity.min, nodeParameterBounds.capacity.max)
+              : node.data.capacity,
+            baseLatencyMs: Number.isFinite(nextLatency)
+              ? clampNumber(nextLatency!, nodeParameterBounds.baseLatencyMs.min, nodeParameterBounds.baseLatencyMs.max)
+              : node.data.baseLatencyMs,
           },
         }
       }),
@@ -793,7 +923,7 @@ function App() {
         <h1>Deployment Playground</h1>
         <div className="topbar-controls">
           <label>
-            场景
+            {termLabel('场景', 'scenario')}
             <select value={scenarioId} onChange={(event) => setScenarioId(event.target.value as ScenarioDefinition['id'])}>
               {scenarios.map((scenario) => (
                 <option key={scenario.id} value={scenario.id} disabled={!unlockedScenarioIds.has(scenario.id)}>
@@ -813,7 +943,7 @@ function App() {
           </button>
           <button onClick={runOnce}>单步仿真</button>
           <label>
-            曲线
+            {termLabel('曲线', 'traffic-pattern')}
             <select value={trafficPattern} onChange={(event) => setTrafficPattern(event.target.value as TrafficPattern)}>
               <option value="constant">固定</option>
               <option value="sine">正弦</option>
@@ -822,7 +952,7 @@ function App() {
             </select>
           </label>
           <label>
-            速度
+            {termLabel('速度', 'scheduler-speed')}
             <select
               value={scheduler.speed}
               onChange={(event) => {
@@ -837,7 +967,7 @@ function App() {
             </select>
           </label>
           <label>
-            模板
+            {termLabel('模板', 'template')}
             <select
               value={selectedTemplateId}
               onChange={(event) => setSelectedTemplateId(event.target.value)}
@@ -882,7 +1012,7 @@ function App() {
 
       <main className="workspace">
         <aside className="left-panel">
-          <h2>组件库</h2>
+          <h2>{termLabel('组件库', 'component-library')}</h2>
           <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
@@ -890,10 +1020,13 @@ function App() {
           />
           <div className="palette-list">
             {filteredPalette.map((item) => (
-              <button key={item.kind} onClick={() => addNode(item.kind)} className="palette-item">
-                <span>{item.label}</span>
-                <small>{item.group}</small>
-              </button>
+              <div key={item.kind} className="palette-item-row">
+                <button onClick={() => addNode(item.kind)} className="palette-item">
+                  <span>{item.label}</span>
+                  <small>{item.group}</small>
+                </button>
+                <TermHelp termKey={componentTermKeyByKind[item.kind]} />
+              </div>
             ))}
           </div>
         </aside>
@@ -914,18 +1047,30 @@ function App() {
         </section>
 
         <aside className="right-panel">
-          <h2>仿真参数</h2>
+          <h2>{termLabel('仿真参数', 'simulation-config')}</h2>
           <div className="right-tabs">
-            <button className={rightTab === 'node' ? 'active' : ''} onClick={() => setRightTab('node')}>节点</button>
-            <button className={rightTab === 'observe' ? 'active' : ''} onClick={() => setRightTab('observe')}>观测</button>
-            <button className={rightTab === 'events' ? 'active' : ''} onClick={() => setRightTab('events')}>事件</button>
-            <button className={rightTab === 'report' ? 'active' : ''} onClick={() => setRightTab('report')}>复盘</button>
+            <div className="term-tab-item">
+              <button className={rightTab === 'node' ? 'active' : ''} onClick={() => setRightTab('node')}>节点</button>
+              <TermHelp termKey="node-tab" />
+            </div>
+            <div className="term-tab-item">
+              <button className={rightTab === 'observe' ? 'active' : ''} onClick={() => setRightTab('observe')}>观测</button>
+              <TermHelp termKey="observe-tab" />
+            </div>
+            <div className="term-tab-item">
+              <button className={rightTab === 'events' ? 'active' : ''} onClick={() => setRightTab('events')}>事件</button>
+              <TermHelp termKey="event-tab" />
+            </div>
+            <div className="term-tab-item">
+              <button className={rightTab === 'report' ? 'active' : ''} onClick={() => setRightTab('report')}>复盘</button>
+              <TermHelp termKey="report-tab" />
+            </div>
           </div>
 
           {rightTab === 'node' && (
             <>
               <section className="inspector-panel">
-                <h3>Inspector</h3>
+                <h3>{termLabel('Inspector', 'inspector')}</h3>
                 <p>已选择 {selectedNodes.length} 个节点</p>
                 {primarySelectedNode ? (
                   <>
@@ -938,29 +1083,43 @@ function App() {
                         />
                       </label>
                       <label>
-                        容量
+                        {termLabel('容量', 'capacity')}
                         <input
                           type="number"
-                          min={1}
+                          min={nodeParameterBounds.capacity.min}
+                          max={nodeParameterBounds.capacity.max}
                           value={primarySelectedNode.data.capacity}
                           onChange={(event) =>
-                            patchPrimaryNode({ capacity: Math.max(1, Number(event.target.value) || 1) })
+                            patchPrimaryNode({
+                              capacity: clampNumber(
+                                Number(event.target.value) || nodeParameterBounds.capacity.defaultValue,
+                                nodeParameterBounds.capacity.min,
+                                nodeParameterBounds.capacity.max,
+                              ),
+                            })
                           }
                         />
                       </label>
                       <label>
-                        基础延迟(ms)
+                        {termLabel('基础延迟(ms)', 'base-latency')}
                         <input
                           type="number"
-                          min={1}
+                          min={nodeParameterBounds.baseLatencyMs.min}
+                          max={nodeParameterBounds.baseLatencyMs.max}
                           value={primarySelectedNode.data.baseLatencyMs}
                           onChange={(event) =>
-                            patchPrimaryNode({ baseLatencyMs: Math.max(1, Number(event.target.value) || 1) })
+                            patchPrimaryNode({
+                              baseLatencyMs: clampNumber(
+                                Number(event.target.value) || nodeParameterBounds.baseLatencyMs.defaultValue,
+                                nodeParameterBounds.baseLatencyMs.min,
+                                nodeParameterBounds.baseLatencyMs.max,
+                              ),
+                            })
                           }
                         />
                       </label>
                       <label>
-                        可用区
+                        {termLabel('可用区', 'zone')}
                         <input
                           value={primarySelectedNode.data.zone}
                           onChange={(event) => patchPrimaryNode({ zone: event.target.value })}
@@ -985,23 +1144,25 @@ function App() {
                 )}
               </section>
               <section className="batch-panel">
-                <h3>批量编辑</h3>
+                <h3>{termLabel('批量编辑', 'batch-edit')}</h3>
                 <div className="batch-fields">
                   <label>
-                    容量
+                    {termLabel('容量', 'capacity')}
                     <input
                       type="number"
-                      min={1}
+                      min={nodeParameterBounds.capacity.min}
+                      max={nodeParameterBounds.capacity.max}
                       value={batchCapacity}
                       onChange={(event) => setBatchCapacity(event.target.value)}
                       placeholder="留空不修改"
                     />
                   </label>
                   <label>
-                    基础延迟(ms)
+                    {termLabel('基础延迟(ms)', 'base-latency')}
                     <input
                       type="number"
-                      min={1}
+                      min={nodeParameterBounds.baseLatencyMs.min}
+                      max={nodeParameterBounds.baseLatencyMs.max}
                       value={batchLatency}
                       onChange={(event) => setBatchLatency(event.target.value)}
                       placeholder="留空不修改"
@@ -1013,7 +1174,7 @@ function App() {
                 </button>
               </section>
               <label>
-                固定 QPS: {fixedQps}
+                {termLabel(`固定 QPS: ${fixedQps}`, 'fixed-qps')}
                 <input
                   type="range"
                   min={300}
@@ -1030,57 +1191,57 @@ function App() {
             <>
               <section className="metric-grid">
                 <article>
-                  <h3>Tick</h3>
+                  <h3>{termLabel('Tick', 'tick')}</h3>
                   <p>{scheduler.tick}</p>
                 </article>
                 <article>
-                  <h3>Active QPS</h3>
+                  <h3>{termLabel('Active QPS', 'active-qps')}</h3>
                   <p>{metrics.qps}</p>
                 </article>
                 <article>
-                  <h3>QPS</h3>
+                  <h3>{termLabel('QPS', 'qps')}</h3>
                   <p>{fixedQps}</p>
                 </article>
                 <article>
-                  <h3>P95</h3>
+                  <h3>{termLabel('P95', 'p95')}</h3>
                   <p>{metrics.p95LatencyMs} ms</p>
                 </article>
                 <article>
-                  <h3>P99</h3>
+                  <h3>{termLabel('P99', 'p99')}</h3>
                   <p>{metrics.p99LatencyMs} ms</p>
                 </article>
                 <article>
-                  <h3>Error Rate</h3>
+                  <h3>{termLabel('Error Rate', 'error-rate')}</h3>
                   <p>{metrics.errorRate}%</p>
                 </article>
                 <article>
-                  <h3>Availability</h3>
+                  <h3>{termLabel('Availability', 'availability')}</h3>
                   <p>{metrics.availability}%</p>
                 </article>
                 <article>
-                  <h3>Cost</h3>
+                  <h3>{termLabel('Cost', 'cost')}</h3>
                   <p>${scoreCard.estimatedCost}</p>
                 </article>
               </section>
               <section className="score-panel">
                 <div className="score-head">
-                  <h3>评分模型</h3>
+                  <h3>{termLabel('评分模型', 'score-model')}</h3>
                   <strong>
                     {scoreCard.total} / {scoreCard.grade}
                   </strong>
                 </div>
                 <p className="score-stars">{'★'.repeat(scoreCard.star)}{'☆'.repeat(5 - scoreCard.star)}</p>
                 <ul>
-                  <li><span>性能</span><span>{scoreCard.breakdown.performance}</span></li>
-                  <li><span>稳定性</span><span>{scoreCard.breakdown.stability}</span></li>
-                  <li><span>成本</span><span>{scoreCard.breakdown.cost}</span></li>
-                  <li><span>可恢复性</span><span>{scoreCard.breakdown.recoverability}</span></li>
-                  <li><span>安全性</span><span>{scoreCard.breakdown.security}</span></li>
+                  <li><span>{termLabel('性能', 'score-performance')}</span><span>{scoreCard.breakdown.performance}</span></li>
+                  <li><span>{termLabel('稳定性', 'score-stability')}</span><span>{scoreCard.breakdown.stability}</span></li>
+                  <li><span>{termLabel('成本', 'cost')}</span><span>{scoreCard.breakdown.cost}</span></li>
+                  <li><span>{termLabel('可恢复性', 'score-recoverability')}</span><span>{scoreCard.breakdown.recoverability}</span></li>
+                  <li><span>{termLabel('安全性', 'score-security')}</span><span>{scoreCard.breakdown.security}</span></li>
                 </ul>
               </section>
               <section className="heatmap-panel">
                 <div className="heatmap-header">
-                  <h3>资源热力图</h3>
+                  <h3>{termLabel('资源热力图', 'resource-heatmap')}</h3>
                   <select value={heatMetric} onChange={(event) => setHeatMetric(event.target.value as HeatmapMetric)}>
                     <option value="cpu">CPU</option>
                     <option value="memory">Memory</option>
@@ -1114,7 +1275,7 @@ function App() {
                 )}
               </section>
               <section className="trace-panel">
-                <h3>调用链路视图</h3>
+                <h3>{termLabel('调用链路视图', 'trace-view')}</h3>
                 {traceSegments.length === 0 ? (
                   <p>请先建立链路并运行仿真。</p>
                 ) : (
@@ -1137,7 +1298,7 @@ function App() {
               </section>
               <section className="score-panel">
                 <div className="score-head">
-                  <h3>性能剖析</h3>
+                  <h3>{termLabel('性能剖析', 'perf-profile')}</h3>
                   <strong>{profileSummary.sampleCount} samples</strong>
                 </div>
                 <ul>
@@ -1150,7 +1311,7 @@ function App() {
               </section>
               <section className="score-panel">
                 <div className="score-head">
-                  <h3>内部状态快照</h3>
+                  <h3>{termLabel('内部状态快照', 'debug-snapshot')}</h3>
                   <strong>{debugSnapshots.length}</strong>
                 </div>
                 <div className="inline-actions">
@@ -1185,7 +1346,7 @@ function App() {
           {rightTab === 'events' && (
             <>
               <section className="events-panel">
-                <h3>故障注入</h3>
+                <h3>{termLabel('故障注入', 'fault-injection')}</h3>
                 <div className="event-controls">
                   <select value={selectedEventId} onChange={(event) => setSelectedEventId(event.target.value)}>
                     {eventTemplates.map((item) => (
@@ -1195,6 +1356,7 @@ function App() {
                     ))}
                   </select>
                   <button onClick={injectEvent}>注入事件</button>
+                  {selectedEventId && eventTermKeyById[selectedEventId] && <TermHelp termKey={eventTermKeyById[selectedEventId]!} />}
                 </div>
                 <div className="event-active-list">
                   {activeEvents.length === 0 ? (
@@ -1203,24 +1365,35 @@ function App() {
                     <ul>
                       {activeEvents.map((event) => (
                         <li key={event.instanceId}>
-                          {event.name}（剩余 {event.remainingTicks} tick）
+                          <span className="term-label">
+                            {event.name}
+                            {eventTermKeyById[event.id] && <TermHelp termKey={eventTermKeyById[event.id]!} />}
+                          </span>
+                          （剩余 {event.remainingTicks} tick）
                         </li>
                       ))}
                     </ul>
                   )}
                 </div>
                 <div className="orchestration-panel">
-                  <h4>事件编排</h4>
+                  <h4>{termLabel('事件编排', 'orchestration')}</h4>
                   <div className="orchestration-options">
                     <label>
-                      模式
+                      {termLabel('故障种子', 'fault-seed')}
+                      <input
+                        value={faultSeed}
+                        onChange={(event) => setFaultSeed(event.target.value || 'seed')}
+                      />
+                    </label>
+                    <label>
+                      {termLabel('模式', 'orchestration-mode')}
                       <select value={orchestrationMode} onChange={(event) => setOrchestrationMode(event.target.value as OrchestrationMode)}>
                         <option value="serial">串行</option>
                         <option value="parallel">并行</option>
                       </select>
                     </label>
                     <label>
-                      概率 {Math.round(orchestrationProbability * 100)}%
+                      {termLabel(`概率 ${Math.round(orchestrationProbability * 100)}%`, 'orchestration-probability')}
                       <input
                         type="range"
                         min={5}
@@ -1248,6 +1421,12 @@ function App() {
                         onChange={(event) => setOrchestrationEndTick(event.target.value)}
                       />
                     </label>
+                  </div>
+                  <div className="inline-actions">
+                    <button className="inline-action-btn" onClick={() => setSeedCycle((value) => value + 1)}>
+                      重置随机序列
+                    </button>
+                    <small>当前序列 {seedCycle}</small>
                   </div>
                   <div className="orchestration-events">
                     {eventTemplates.map((item) => (
@@ -1283,7 +1462,7 @@ function App() {
                 </div>
               </section>
               <section className="timeline">
-                <h3>事件时间线</h3>
+                <h3>{termLabel('事件时间线', 'timeline')}</h3>
                 {eventLogs.length === 0 ? (
                   <p>尚无注入或恢复事件。</p>
                 ) : (
@@ -1295,7 +1474,7 @@ function App() {
                 )}
               </section>
               <section className="timeline">
-                <h3>事件回放</h3>
+                <h3>{termLabel('事件回放', 'event-replay')}</h3>
                 <div className="inline-actions">
                   <button className="inline-action-btn" onClick={replayNextStep}>回放一步</button>
                   <button className="inline-action-btn" onClick={replayRunning ? () => setReplayRunning(false) : startReplay}>
@@ -1320,14 +1499,17 @@ function App() {
           {rightTab === 'report' && (
             <section className="review">
               <div className="progress-summary">
-                <h4>场景进度</h4>
+                <h4>{termLabel('场景进度', 'scenario-progress')}</h4>
                 <ul>
                   {scenarios.map((scenario) => {
                     const entry = scenarioProgress[scenario.id]
                     const unlocked = unlockedScenarioIds.has(scenario.id)
                     return (
                       <li key={scenario.id} className={scenario.id === selectedScenario.id ? 'active' : ''}>
-                        <span>{scenario.name}</span>
+                        <span className="term-label">
+                          {scenario.name}
+                          <TermHelp termKey="scenario" />
+                        </span>
                         <strong>
                           {!unlocked ? '未解锁' : entry?.passed ? `已通关 ${'★'.repeat(entry.bestStars)}` : '进行中'}
                         </strong>
@@ -1338,7 +1520,7 @@ function App() {
               </div>
               <div className="snapshot-panel">
                 <div className="snapshot-head">
-                  <h4>架构快照</h4>
+                  <h4>{termLabel('架构快照', 'architecture-snapshot')}</h4>
                   <div className="snapshot-head-actions">
                     <button onClick={saveCurrentSnapshot}>保存当前</button>
                     <button onClick={exportSnapshots}>导出文件</button>
@@ -1385,7 +1567,7 @@ function App() {
                 )}
               </div>
               <div className="compare-panel">
-                <h4>方案对比</h4>
+                <h4>{termLabel('方案对比', 'compare')}</h4>
                 {snapshots.length < 2 ? (
                   <p>至少保存 2 个快照后可进行对比。</p>
                 ) : (
@@ -1434,7 +1616,7 @@ function App() {
                 )}
               </div>
               <div className="goal-summary">
-                <h4>当前场景目标</h4>
+                <h4>{termLabel('当前场景目标', 'scenario-goal')}</h4>
                 <ul>
                   {scenarioEvaluation.goalResults.map((item) => (
                     <li key={item.goal.id} className={item.passed ? 'passed' : 'failed'}>
@@ -1445,23 +1627,23 @@ function App() {
                 </ul>
               </div>
               <div className="review-head">
-                <h3>自动复盘报告</h3>
+                <h3>{termLabel('自动复盘报告', 'postmortem')}</h3>
                 <button onClick={copyPostmortem}>复制报告</button>
               </div>
               <p>{postmortem.summary}</p>
-              <h4>根因</h4>
+              <h4>{termLabel('根因', 'root-cause')}</h4>
               <ul>
                 {postmortem.rootCauses.map((item) => (
                   <li key={item}>{item}</li>
                 ))}
               </ul>
-              <h4>改进项</h4>
+              <h4>{termLabel('改进项', 'improvement')}</h4>
               <ul>
                 {postmortem.improvements.map((item) => (
                   <li key={item}>{item}</li>
                 ))}
               </ul>
-              <h4>推荐架构调整</h4>
+              <h4>{termLabel('推荐架构调整', 'architecture-adjustment')}</h4>
               <ul>
                 {postmortem.architectureAdjustments.map((item) => (
                   <li key={item}>{item}</li>

@@ -18,6 +18,7 @@ export function executeOrchestrationTick(
   plans: RuntimeOrchestrationPlan[],
   tick: number,
   templates: EventTemplate[],
+  randomFn: () => number = Math.random,
 ) {
   const generated: ActiveEvent[] = []
   const logs: string[] = []
@@ -25,7 +26,7 @@ export function executeOrchestrationTick(
     if (!plan.enabled || plan.eventIds.length === 0 || !withinWindow(plan, tick)) {
       return plan
     }
-    if (Math.random() > plan.probability) {
+    if (randomFn() > plan.probability) {
       return plan
     }
     if (plan.mode === 'parallel') {
@@ -56,4 +57,3 @@ export function executeOrchestrationTick(
     logs,
   }
 }
-
