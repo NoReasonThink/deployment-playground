@@ -46,8 +46,7 @@ export function applyHeatmapStyle(nodes: PlaygroundNode[], metric: HeatmapMetric
     return {
       ...node,
       style: {
-        ...node.style,
-        boxShadow: `0 0 0 3px ${color}33`,
+        borderColor: `${color}66`,
       },
       data: {
         ...node.data,
@@ -55,4 +54,3 @@ export function applyHeatmapStyle(nodes: PlaygroundNode[], metric: HeatmapMetric
     }
   })
 }
-

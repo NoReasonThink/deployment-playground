@@ -141,16 +141,87 @@
   text-align: left;
   cursor: pointer;
   display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.palette-item-copy {
+  display: grid;
   gap: 2px;
+  min-width: 0;
 }
 
-.palette-item span {
+.palette-item-copy span {
   font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.palette-item small {
+.palette-item-copy small {
   color: #64748b;
 }
+
+.component-logo {
+  --logo-bg: #eff6ff;
+  --logo-color: #1d4ed8;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--logo-bg);
+  color: var(--logo-color);
+  border: 1px solid color-mix(in srgb, var(--logo-color) 24%, transparent);
+  flex: 0 0 auto;
+}
+
+.component-logo svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2.1;
+}
+
+.component-logo--sm {
+  width: 28px;
+  height: 28px;
+}
+
+.component-logo--sm svg {
+  width: 15px;
+  height: 15px;
+}
+
+.component-logo--lg {
+  width: 40px;
+  height: 40px;
+}
+
+.component-logo--lg svg {
+  width: 21px;
+  height: 21px;
+}
+
+.component-logo--cyan { --logo-bg: #ecfeff; --logo-color: #0891b2; }
+.component-logo--blue { --logo-bg: #eff6ff; --logo-color: #2563eb; }
+.component-logo--indigo { --logo-bg: #eef2ff; --logo-color: #4f46e5; }
+.component-logo--red { --logo-bg: #fef2f2; --logo-color: #dc2626; }
+.component-logo--amber { --logo-bg: #fffbeb; --logo-color: #d97706; }
+.component-logo--orange { --logo-bg: #fff7ed; --logo-color: #ea580c; }
+.component-logo--violet { --logo-bg: #f5f3ff; --logo-color: #7c3aed; }
+.component-logo--emerald { --logo-bg: #ecfdf5; --logo-color: #059669; }
+.component-logo--teal { --logo-bg: #f0fdfa; --logo-color: #0d9488; }
+.component-logo--slate { --logo-bg: #f8fafc; --logo-color: #475569; }
+.component-logo--lime { --logo-bg: #f7fee7; --logo-color: #65a30d; }
+.component-logo--sky { --logo-bg: #f0f9ff; --logo-color: #0284c7; }
+.component-logo--purple { --logo-bg: #faf5ff; --logo-color: #9333ea; }
+.component-logo--rose { --logo-bg: #fff1f2; --logo-color: #e11d48; }
+.component-logo--zinc { --logo-bg: #fafafa; --logo-color: #3f3f46; }
+.component-logo--green { --logo-bg: #f0fdf4; --logo-color: #16a34a; }
+.component-logo--yellow { --logo-bg: #fefce8; --logo-color: #ca8a04; }
 
 .canvas-panel {
   border: 1px solid #dbeafe;
@@ -158,6 +229,105 @@
   background: #ffffff;
   overflow: hidden;
   min-height: 0;
+}
+
+.canvas-panel .react-flow__node-default,
+.canvas-panel .react-flow__node-input,
+.canvas-panel .react-flow__node-output,
+.canvas-panel .react-flow__node-group {
+  width: max-content;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  padding: 0;
+}
+
+.canvas-panel .react-flow__node.selected,
+.canvas-panel .react-flow__node:focus,
+.canvas-panel .react-flow__node:focus-visible {
+  outline: none;
+  border: 0;
+  box-shadow: none;
+}
+
+.playground-flow-node {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 176px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: none;
+  padding: 10px;
+  color: #0f172a;
+}
+
+.playground-flow-node.is-selected {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.28);
+}
+
+.playground-flow-node--warning {
+  background: #fffbeb;
+  border-color: #f59e0b;
+}
+
+.playground-flow-node--critical {
+  background: #fef2f2;
+  border-color: #dc2626;
+}
+
+.playground-flow-node__main {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.playground-flow-node__text {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.playground-flow-node__text strong,
+.playground-flow-node__text span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.playground-flow-node__text strong {
+  font-size: 0.88rem;
+}
+
+.playground-flow-node__text span {
+  color: #64748b;
+  font-size: 0.72rem;
+}
+
+.playground-flow-node__metrics {
+  margin-top: 8px;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: #475569;
+  font-size: 0.72rem;
+}
+
+.playground-flow-node__handle {
+  width: 9px;
+  height: 9px;
+  border: 2px solid #ffffff;
+  background: #0f172a;
+}
+
+.playground-flow-node__handle--target {
+  left: -6px;
+}
+
+.playground-flow-node__handle--source {
+  right: -6px;
 }
 
 .metric-grid {

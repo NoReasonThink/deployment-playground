@@ -86,16 +86,9 @@ export function evaluateScenario(
 }
 
 export function isScenarioUnlocked(scenario: ScenarioDefinition, progress: ScenarioProgress) {
-  if (scenario.unlockRule.prerequisiteScenarioIds.length === 0) {
-    return true
-  }
-  return scenario.unlockRule.prerequisiteScenarioIds.every((id) => {
-    const entry = progress[id]
-    if (!entry) {
-      return false
-    }
-    return entry.passed && entry.bestStars >= scenario.unlockRule.minStars
-  })
+  void scenario
+  void progress
+  return true
 }
 
 function isEntryChanged(a: ScenarioProgressEntry | undefined, b: ScenarioProgressEntry) {

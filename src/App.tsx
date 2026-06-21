@@ -9,9 +9,12 @@ import {
   useNodesState,
   type Connection,
   type Edge,
+  type NodeTypes,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import './App.css'
+import { ComponentLogo } from './components/componentIcons'
+import { PlaygroundFlowNode } from './components/PlaygroundFlowNode'
 import { TermHelp } from './components/TermHelp'
 import { nodeParameterBounds } from './config/guardrails'
 import { eventTemplates } from './data/events'
@@ -75,6 +78,43 @@ function clampNumber(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))
 }
 
+function resetRuntimeNodeData(node: PlaygroundNode): PlaygroundNode {
+  const defaults = buildNodeData(node.data.kind)
+
+  return {
+    ...node,
+    data: {
+      ...node.data,
+      qps: defaults.qps,
+      utilization: defaults.utilization,
+      status: defaults.status,
+      retriesPerMin: defaults.retriesPerMin,
+      timeoutRate: defaults.timeoutRate,
+      failureRate: defaults.failureRate,
+      successRate: defaults.successRate,
+      cpu: defaults.cpu,
+      memory: defaults.memory,
+      bandwidthMbps: defaults.bandwidthMbps,
+      iops: defaults.iops,
+      queueDepth: defaults.queueDepth,
+      poolUtilization: defaults.poolUtilization,
+      cacheHitRate: defaults.cacheHitRate,
+      evictionRisk: defaults.evictionRisk,
+      replicaLagMs: defaults.replicaLagMs,
+      consistencyWindowMs: defaults.consistencyWindowMs,
+      backlog: defaults.backlog,
+      rebalanceRisk: defaults.rebalanceRisk,
+      indexingLagMs: defaults.indexingLagMs,
+      shardLoad: defaults.shardLoad,
+      throttledRate: defaults.throttledRate,
+      degradedRate: defaults.degradedRate,
+      retryBackoffMs: defaults.retryBackoffMs,
+      failoverRate: defaults.failoverRate,
+      circuitOpen: defaults.circuitOpen,
+    },
+  }
+}
+
 const componentTermKeyByKind: Record<NodeKind, GlossaryTermKey> = {
   cdn: 'component.cdn',
   'load-balancer': 'component.load-balancer',
@@ -106,6 +146,10 @@ const eventTermKeyById: Partial<Record<string, GlossaryTermKey>> = {
   'region-a-partition': 'event.region-a-partition',
   'canary-regression': 'event.canary-regression',
   'kms-rotation-failure': 'event.kms-rotation-failure',
+}
+
+const nodeTypes: NodeTypes = {
+  default: PlaygroundFlowNode,
 }
 
 function App() {
@@ -584,6 +628,27 @@ function App() {
     }
   }
 
+  const endSimulation = () => {
+    const reset = resetScheduler(schedulerRef.current.speed)
+    schedulerRef.current = reset
+    setScheduler(reset)
+    setNodes((currentNodes) => currentNodes.map(resetRuntimeNodeData))
+    setMetrics({
+      qps: fixedQps,
+      p95LatencyMs: 0,
+      p99LatencyMs: 0,
+      errorRate: 0,
+      availability: 100,
+    })
+    setBottlenecks([])
+    setActiveEvents([])
+    activeEventsRef.current = []
+    setOrchestrationPlans((currentPlans) => currentPlans.map((plan) => ({ ...plan, consumedEventIds: [] })))
+    orchestrationPlansRef.current = orchestrationPlansRef.current.map((plan) => ({ ...plan, consumedEventIds: [] }))
+    setProfileSamples([])
+    setConnectHint('已结束本次连续仿真，保留当前拓扑并复位运行指标。')
+  }
+
   const patchPrimaryNode = (patch: Partial<PlaygroundNode['data']>) => {
     if (!primarySelectedNode) {
       return
@@ -942,6 +1007,9 @@ function App() {
             {scheduler.running ? '暂停' : '开始'}
           </button>
           <button onClick={runOnce}>单步仿真</button>
+          <button className="ghost-btn" onClick={endSimulation} disabled={!scheduler.running && scheduler.tick === 0}>
+            结束
+          </button>
           <label>
             {termLabel('曲线', 'traffic-pattern')}
             <select value={trafficPattern} onChange={(event) => setTrafficPattern(event.target.value as TrafficPattern)}>
@@ -1022,8 +1090,11 @@ function App() {
             {filteredPalette.map((item) => (
               <div key={item.kind} className="palette-item-row">
                 <button onClick={() => addNode(item.kind)} className="palette-item">
-                  <span>{item.label}</span>
-                  <small>{item.group}</small>
+                  <ComponentLogo kind={item.kind} />
+                  <span className="palette-item-copy">
+                    <span>{item.label}</span>
+                    <small>{item.group}</small>
+                  </span>
                 </button>
                 <TermHelp termKey={componentTermKeyByKind[item.kind]} />
               </div>
@@ -1036,6 +1107,7 @@ function App() {
             fitView
             nodes={heatmapNodes}
             edges={edges}
+            nodeTypes={nodeTypes}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
